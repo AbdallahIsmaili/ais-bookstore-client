@@ -7,6 +7,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  profileImage?: string;
 }
 
 interface AuthContextType {
@@ -16,7 +17,10 @@ interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
+  updateUser: (user: User) => void;
 }
+
+
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -46,6 +50,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     loadAuthState();
   }, []);
+
+  const updateUser = (userData: User) => {
+    setUser(userData);
+  };
 
   const login = async (email: string, password: string) => {
     setLoading(true);
@@ -97,7 +105,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, user, login, register, logout, loading }}
+      value={{
+        isAuthenticated,
+        user,
+        login,
+        register,
+        logout,
+        loading,
+        updateUser,
+      }}
     >
       {children}
     </AuthContext.Provider>

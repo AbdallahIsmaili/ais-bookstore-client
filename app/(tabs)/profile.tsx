@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
+  TextInput,
+  Modal,
 } from "react-native";
 import { Link, router } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
@@ -15,14 +17,30 @@ import api from "@/services/api";
 import { Book } from "@/types";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import * as ImagePicker from "expo-image-picker";
+import mime from "mime";
+
+interface ImageInfo {
+  uri: string;
+  width?: number;
+  height?: number;
+  type?: string;
+}
 
 const ProfileScreen = () => {
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, updateUser } = useAuth();
   const [borrowedBooks, setBorrowedBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(user?.name || "");
+  const [editEmail, setEditEmail] = useState(user?.email || "");
+  const [profileImage, setProfileImage] = useState(user?.profileImage || null);
+  const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
+  const [tempImage, setTempImage] = useState<ImageInfo | null>(null);
 
   const fetchBorrowedBooks = async () => {
     try {
@@ -60,6 +78,115 @@ const ProfileScreen = () => {
       console.error("Error returning book:", error);
       Alert.alert("Error", "Failed to return book");
     }
+  };
+
+  const handleEditProfile = () => {
+    setEditName(user?.name || "");
+    setEditEmail(user?.email || "");
+    setEditing(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      setSaving(true);
+
+      let imageUri = user?.profileImage || null;
+      if (tempImage) {
+        const formData = new FormData();
+
+        // Create a file object with proper typing
+        const file = {
+          uri: tempImage.uri,
+          name: tempImage.uri.split("/").pop() || "profile.jpg",
+          type: mime.getType(tempImage.uri) || "image/jpeg",
+        };
+
+        // @ts-ignore - React Native specific FormData append
+        formData.append("image", file);
+
+        try {
+          const uploadResponse = await api.post("/api/upload", formData, {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          });
+          imageUri = uploadResponse.data.url;
+        } catch (uploadError) {
+          console.error("Upload error:", uploadError);
+          throw new Error("Failed to upload image");
+        }
+      }
+
+      // Update user info
+      const response = await api.put("/auth/me", {
+        name: editName,
+        email: editEmail,
+        profileImage: imageUri,
+      });
+
+      updateUser(response.data);
+      setEditing(false);
+      Alert.alert("Success", "Profile updated successfully");
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Failed to update profile"
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission required",
+        "We need access to your photos to upload a profile picture"
+      );
+      return;
+    }
+
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      setTempImage({
+        uri: result.assets[0].uri,
+        type: result.assets[0].type || "image",
+      });
+    }
+  };
+
+  const renderProfileImage = () => {
+    const imageSource = tempImage?.uri || user?.profileImage || null;
+
+    return (
+      <TouchableOpacity
+        onPress={() => imageSource && setImagePreviewVisible(true)}
+        onLongPress={editing ? pickImage : undefined}
+      >
+        {imageSource ? (
+          <Image
+            source={{ uri: imageSource }}
+            className="w-16 h-16 rounded-full mr-4"
+          />
+        ) : (
+          <View className="bg-blue-100 dark:bg-blue-900 w-16 h-16 rounded-full items-center justify-center mr-4">
+            <MaterialIcons
+              name="person"
+              size={32}
+              color={isDarkMode ? "#93c5fd" : "#3b82f6"}
+            />
+          </View>
+        )}
+      </TouchableOpacity>
+    );
   };
 
   const renderBookItem = ({ item }: { item: Book }) => (
@@ -201,22 +328,111 @@ const ProfileScreen = () => {
         }`}
       >
         <View className="flex-row items-center mb-4">
-          <View className="bg-blue-100 dark:bg-blue-900 w-16 h-16 rounded-full items-center justify-center mr-4">
-            <MaterialIcons
-              name="person"
-              size={32}
-              color={isDarkMode ? "#93c5fd" : "#3b82f6"}
-            />
+          {renderProfileImage()}
+          <View className="flex-1">
+            {editing ? (
+              <>
+                <TextInput
+                  className={`text-xl font-bold mb-2 p-2 rounded ${
+                    isDarkMode
+                      ? "text-white bg-gray-700 border-gray-600"
+                      : "text-gray-900 bg-white border-gray-300"
+                  } border`}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Your name"
+                  placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                />
+                <TextInput
+                  className={`p-2 rounded ${
+                    isDarkMode
+                      ? "text-gray-300 bg-gray-700 border-gray-600"
+                      : "text-gray-600 bg-white border-gray-300"
+                  } border`}
+                  value={editEmail}
+                  onChangeText={setEditEmail}
+                  placeholder="Your email"
+                  placeholderTextColor={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                  keyboardType="email-address"
+                />
+              </>
+            ) : (
+              <>
+                <Text className="text-xl font-bold text-gray-900 dark:text-white">
+                  {user?.name}
+                </Text>
+                <Text className="text-gray-600 dark:text-gray-300">
+                  {user?.email}
+                </Text>
+              </>
+            )}
           </View>
-          <View>
-            <Text className="text-xl font-bold text-gray-900 dark:text-white">
-              {user?.name}
-            </Text>
-            <Text className="text-gray-600 dark:text-gray-300">
-              {user?.email}
-            </Text>
-          </View>
+          {!editing ? (
+            <TouchableOpacity onPress={handleEditProfile}>
+              <MaterialIcons
+                name="edit"
+                size={24}
+                color={isDarkMode ? "#93c5fd" : "#3b82f6"}
+              />
+            </TouchableOpacity>
+          ) : (
+            <View className="flex-row">
+              <TouchableOpacity
+                onPress={handleSaveProfile}
+                className="mr-2"
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={isDarkMode ? "#4ade80" : "#16a34a"}
+                  />
+                ) : (
+                  <MaterialIcons
+                    name="check"
+                    size={24}
+                    color={isDarkMode ? "#4ade80" : "#16a34a"}
+                  />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setEditing(false);
+                  setTempImage(null);
+                }}
+                disabled={saving}
+              >
+                <MaterialIcons
+                  name="close"
+                  size={24}
+                  color={isDarkMode ? "#f87171" : "#dc2626"}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
+
+        {editing && (
+          <View className="mb-4">
+            <TouchableOpacity
+              onPress={pickImage}
+              className={`py-2 px-4 rounded-lg flex-row items-center ${
+                isDarkMode ? "bg-blue-900" : "bg-blue-100"
+              }`}
+              disabled={saving}
+            >
+              <MaterialIcons
+                name="photo-camera"
+                size={20}
+                color={isDarkMode ? "#93c5fd" : "#3b82f6"}
+                className="mr-2"
+              />
+              <Text className={isDarkMode ? "text-blue-200" : "text-blue-800"}>
+                {tempImage ? "Change Image" : "Add Profile Image"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View className="flex-row justify-between">
           <View className="items-center">
@@ -267,6 +483,35 @@ const ProfileScreen = () => {
           borrowedBooks.length === 0 ? { flex: 1 } : { paddingBottom: 20 }
         }
       />
+
+      {/* Image Preview Modal */}
+      <Modal
+        visible={imagePreviewVisible}
+        transparent={true}
+        onRequestClose={() => setImagePreviewVisible(false)}
+      >
+        <View className="flex-1 bg-black/90 items-center justify-center">
+          <TouchableOpacity
+            className="absolute top-16 right-8 z-10"
+            onPress={() => setImagePreviewVisible(false)}
+          >
+            <MaterialIcons name="close" size={32} color="white" />
+          </TouchableOpacity>
+          <Image
+            source={{ uri: tempImage?.uri || user?.profileImage || "" }}
+            className="w-full h-2/3"
+            resizeMode="contain"
+          />
+          {editing && (
+            <TouchableOpacity
+              className="mt-4 bg-blue-500 py-2 px-6 rounded-full"
+              onPress={pickImage}
+            >
+              <Text className="text-white font-medium">Change Image</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 };

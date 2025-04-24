@@ -48,7 +48,7 @@ const RegisterScreen = () => {
   };
 
   return (
-    <View className="flex-1 p-6 bg-gray-50 dark:bg-gray-900">
+    <View className="flex-1 pt-12 p-6 bg-gray-50 dark:bg-gray-900">
       <View className="mb-8">
         <Text className="text-2xl font-bold text-gray-900 dark:text-white">
           Create Account

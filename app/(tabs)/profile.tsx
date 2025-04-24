@@ -9,6 +9,7 @@ import {
   RefreshControl,
   TextInput,
   Modal,
+  Alert,
 } from "react-native";
 import { Link, router } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
@@ -43,6 +44,20 @@ const ProfileScreen = () => {
   const isDarkMode = colorScheme === "dark";
   const [tempImage, setTempImage] = useState<ImageInfo | null>(null);
 
+  const getDaysRemaining = (dueDate: string) => {
+    const due = new Date(dueDate);
+    const today = new Date();
+    const diffTime = due.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const getDueDateStatus = (daysRemaining: number) => {
+    if (daysRemaining < 0) return "Overdue";
+    if (daysRemaining === 0) return "Due today";
+    if (daysRemaining === 1) return "Due tomorrow";
+    return `Due in ${daysRemaining} days`;
+  };
+
   const fetchBorrowedBooks = async () => {
     try {
       setRefreshing(true);
@@ -70,36 +85,26 @@ const ProfileScreen = () => {
 
   const handleLogout = () => {
     Toast.show({
-      type: "info",
+      type: "success",
       text1: "Logged Out",
       text2: "You have been successfully logged out",
       position: "bottom",
-      onHide: logout,
     });
+    logout();
   };
 
   const confirmLogout = () => {
-    Toast.show({
-      type: "info",
-      text1: "Logout?",
-      text2: "Are you sure you want to logout?",
-      position: "bottom",
-      visibilityTime: 4000,
-      autoHide: false,
-      topOffset: 60,
-      buttons: [
-        {
-          text: "Cancel",
-          onPress: () => Toast.hide(),
-          style: "cancel",
-        },
-        {
-          text: "Logout",
-          onPress: handleLogout,
-          style: "destructive",
-        },
-      ],
-    });
+    Alert.alert("Logout?", "Are you sure you want to logout?", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: handleLogout,
+      },
+    ]);
   };
 
   const handleReturnBook = async (bookId: string) => {
@@ -296,10 +301,21 @@ const ProfileScreen = () => {
             )}
           </View>
 
-          {item.borrowedDate && (
-            <Text className="text-sm text-gray-500 dark:text-gray-400">
-              Borrowed on: {new Date(item.borrowedDate).toLocaleDateString()}
-            </Text>
+          {item.borrowedDate && item.dueDate && (
+            <View className="mt-2">
+              <Text className="text-sm text-gray-500 dark:text-gray-400">
+                Borrowed on: {new Date(item.borrowedDate).toLocaleDateString()}
+              </Text>
+              <Text
+                className={`text-sm ${
+                  getDaysRemaining(item.dueDate) <= 3
+                    ? "text-red-500 dark:text-red-400"
+                    : "text-gray-500 dark:text-gray-400"
+                }`}
+              >
+                {getDueDateStatus(getDaysRemaining(item.dueDate))}
+              </Text>
+            </View>
           )}
         </View>
       </View>

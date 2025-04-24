@@ -18,7 +18,7 @@ import { useColorScheme } from "@/hooks/useColorScheme";
 const BookDetailScreen = () => {
   const { id } = useLocalSearchParams();
   const { isAuthenticated, user } = useAuth();
-  const [book, setBook] = useState<Book | null>(null);
+  const [book, setBook] = useState<(Book & { borrower?: string }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const colorScheme = useColorScheme();
@@ -46,13 +46,35 @@ const BookDetailScreen = () => {
     fetchBook();
   }, [id]);
 
+  const getDaysRemaining = (dueDate: string) => {
+    const due = new Date(dueDate);
+    const today = new Date();
+    const diffTime = due.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const getDueDateStatus = (daysRemaining: number) => {
+    if (daysRemaining < 0) return "Overdue";
+    if (daysRemaining === 0) return "Due today";
+    if (daysRemaining === 1) return "Due tomorrow";
+    return `Due in ${daysRemaining} days`;
+  };
+
   const handleBorrow = async () => {
     try {
       setActionLoading(true);
-      await api.post(`/books/${id}/borrow`);
-      // Update local state to reflect the borrow
+      const response = await api.post(`/books/${id}/borrow`);
+      // Update local state with loan information
       setBook((prev) =>
-        prev ? { ...prev, isAvailable: false, borrower: user?.id } : null
+        prev
+          ? {
+              ...prev,
+              isAvailable: false,
+              borrower: user?.id,
+              borrowedDate: response.data.borrowedDate,
+              dueDate: response.data.dueDate,
+            }
+          : null
       );
       Toast.show({
         type: "success",
@@ -79,7 +101,15 @@ const BookDetailScreen = () => {
       await api.post(`/books/${id}/return`);
       // Update local state to reflect the return
       setBook((prev) =>
-        prev ? { ...prev, isAvailable: true, borrower: undefined } : null
+        prev
+          ? {
+              ...prev,
+              isAvailable: true,
+              borrower: undefined,
+              borrowedDate: undefined,
+              dueDate: undefined,
+            }
+          : null
       );
       Toast.show({
         type: "success",
@@ -209,6 +239,35 @@ const BookDetailScreen = () => {
             {book.description || "No description available."}
           </Text>
         </View>
+
+        {/* Loan Info */}
+        {!book.isAvailable && book.borrowedDate && book.dueDate && (
+          <View className="mb-6">
+            <Text className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Loan Information
+            </Text>
+            <Text className="text-gray-700 dark:text-gray-300 mb-1">
+              Borrowed on: {new Date(book.borrowedDate).toLocaleDateString()}
+            </Text>
+            <Text className="text-gray-700 dark:text-gray-300 mb-1">
+              Due date: {new Date(book.dueDate).toLocaleDateString()}
+            </Text>
+            <Text
+              className={`${
+                getDaysRemaining(book.dueDate) <= 3
+                  ? "text-red-500 dark:text-red-400"
+                  : "text-gray-700 dark:text-gray-300"
+              }`}
+            >
+              Status: {getDueDateStatus(getDaysRemaining(book.dueDate))}
+            </Text>
+            {book.borrower === user?.id && (
+              <Text className="text-gray-700 dark:text-gray-300 mt-1">
+                (You borrowed this book)
+              </Text>
+            )}
+          </View>
+        )}
 
         {/* Borrow/Return Button */}
         {isAuthenticated && (

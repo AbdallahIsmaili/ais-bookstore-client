@@ -14,21 +14,45 @@ import api from "@/services/api";
 import { Book } from "@/types";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import Toast from "react-native-toast-message";
 
 const MyBooksScreen = () => {
   const { user, isAuthenticated } = useAuth();
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [returningBookId, setReturningBookId] = useState<string | null>(null);
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
+  const getDaysRemaining = (dueDate: string) => {
+    const due = new Date(dueDate);
+    const today = new Date();
+    const diffTime = due.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+
+  const getDueDateStatus = (daysRemaining: number) => {
+    if (daysRemaining < 0) return "Overdue";
+    if (daysRemaining === 0) return "Due today";
+    if (daysRemaining === 1) return "Due tomorrow";
+    return `Due in ${daysRemaining} days`;
+  };
+
   const fetchBooks = async () => {
     try {
+      setRefreshing(true);
       const response = await api.get("/books/borrowed");
       setBooks(response.data);
     } catch (error) {
       console.error("Error fetching books:", error);
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: "Failed to load borrowed books",
+        position: "bottom",
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -42,16 +66,35 @@ const MyBooksScreen = () => {
   }, [isAuthenticated, user]);
 
   const onRefresh = () => {
-    setRefreshing(true);
     fetchBooks();
   };
 
   const handleReturnBook = async (bookId: string) => {
     try {
+      setReturningBookId(bookId);
       await api.post(`/books/${bookId}/return`);
-      fetchBooks();
+
+      // Optimistically update the UI
+      setBooks((prevBooks) => prevBooks.filter((book) => book._id !== bookId));
+
+      Toast.show({
+        type: "success",
+        text1: "Success",
+        text2: "Book returned successfully!",
+        position: "bottom",
+      });
     } catch (error) {
       console.error("Error returning book:", error);
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: error.response?.data?.message || "Failed to return book",
+        position: "bottom",
+      });
+      // Refresh to get actual state if optimistic update was wrong
+      fetchBooks();
+    } finally {
+      setReturningBookId(null);
     }
   };
 
@@ -102,30 +145,59 @@ const MyBooksScreen = () => {
             )}
           </View>
 
-          {item.borrowedDate && (
-            <Text className="text-sm text-gray-500 dark:text-gray-400">
-              Borrowed on: {new Date(item.borrowedDate).toLocaleDateString()}
-            </Text>
+          {item.borrowedDate && item.dueDate && (
+            <View className="mt-2">
+              <Text className="text-sm text-gray-500 dark:text-gray-400">
+                Borrowed on: {new Date(item.borrowedDate).toLocaleDateString()}
+              </Text>
+              <Text
+                className={`text-sm ${
+                  getDaysRemaining(item.dueDate) <= 3
+                    ? "text-red-500 dark:text-red-400"
+                    : "text-gray-500 dark:text-gray-400"
+                }`}
+              >
+                {getDueDateStatus(getDaysRemaining(item.dueDate))}
+              </Text>
+            </View>
           )}
         </View>
       </View>
 
       <View className="flex-row mt-4 gap-3">
         <TouchableOpacity
-          className="flex-1 bg-red-100 dark:bg-red-900 py-3 rounded-lg flex-row items-center justify-center space-x-2"
+          className={`flex-1 py-3 rounded-lg flex-row items-center justify-center space-x-2 ${
+            isDarkMode ? "bg-red-900" : "bg-red-100"
+          }`}
           onPress={() => handleReturnBook(item._id)}
+          disabled={returningBookId === item._id}
         >
-          <Ionicons
-            name="return-up-back"
-            size={18}
-            color={isDarkMode ? "#fecaca" : "#dc2626"}
-          />
-          <Text className="text-red-600 dark:text-red-200 font-medium">
-            Return
-          </Text>
+          {returningBookId === item._id ? (
+            <ActivityIndicator
+              size="small"
+              color={isDarkMode ? "#fecaca" : "#dc2626"}
+            />
+          ) : (
+            <>
+              <Ionicons
+                name="return-up-back"
+                size={18}
+                color={isDarkMode ? "#fecaca" : "#dc2626"}
+              />
+              <Text
+                className={`font-medium ${
+                  isDarkMode ? "text-red-200" : "text-red-600"
+                }`}
+              >
+                Return
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
         <TouchableOpacity
-          className="flex-1 bg-blue-100 dark:bg-blue-900 py-3 rounded-lg flex-row items-center justify-center space-x-2"
+          className={`flex-1 py-3 rounded-lg flex-row items-center justify-center space-x-2 ${
+            isDarkMode ? "bg-blue-900" : "bg-blue-100"
+          }`}
           onPress={() => router.push(`/books/detail/${item._id}`)}
         >
           <Ionicons
@@ -133,7 +205,11 @@ const MyBooksScreen = () => {
             size={18}
             color={isDarkMode ? "#bfdbfe" : "#2563eb"}
           />
-          <Text className="text-blue-600 dark:text-blue-200 font-medium">
+          <Text
+            className={`font-medium ${
+              isDarkMode ? "text-blue-200" : "text-blue-600"
+            }`}
+          >
             Details
           </Text>
         </TouchableOpacity>

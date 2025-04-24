@@ -8,8 +8,9 @@ export interface Book {
   genre1: string;
   cover_image: string;
   isAvailable: boolean;
-  borrower?: string;
   borrowedDate?: string;
+  dueDate?: string; 
+  loanId?: string; 
 }
 
 export interface User {

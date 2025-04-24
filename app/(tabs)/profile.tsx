@@ -4,7 +4,6 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Image,
   RefreshControl,
@@ -19,6 +18,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import * as ImagePicker from "expo-image-picker";
 import mime from "mime";
+import Toast from "react-native-toast-message";
 
 interface ImageInfo {
   uri: string;
@@ -38,6 +38,7 @@ const ProfileScreen = () => {
   const [profileImage, setProfileImage] = useState(user?.profileImage || null);
   const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [returningBookId, setReturningBookId] = useState<string | null>(null);
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
   const [tempImage, setTempImage] = useState<ImageInfo | null>(null);
@@ -49,7 +50,12 @@ const ProfileScreen = () => {
       setBorrowedBooks(response.data);
     } catch (error) {
       console.error("Error fetching borrowed books:", error);
-      Alert.alert("Error", "Failed to fetch borrowed books");
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: "Failed to fetch borrowed books",
+        position: "bottom",
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -63,20 +69,67 @@ const ProfileScreen = () => {
   }, [isAuthenticated]);
 
   const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Logout", onPress: logout, style: "destructive" },
-    ]);
+    Toast.show({
+      type: "info",
+      text1: "Logged Out",
+      text2: "You have been successfully logged out",
+      position: "bottom",
+      onHide: logout,
+    });
+  };
+
+  const confirmLogout = () => {
+    Toast.show({
+      type: "info",
+      text1: "Logout?",
+      text2: "Are you sure you want to logout?",
+      position: "bottom",
+      visibilityTime: 4000,
+      autoHide: false,
+      topOffset: 60,
+      buttons: [
+        {
+          text: "Cancel",
+          onPress: () => Toast.hide(),
+          style: "cancel",
+        },
+        {
+          text: "Logout",
+          onPress: handleLogout,
+          style: "destructive",
+        },
+      ],
+    });
   };
 
   const handleReturnBook = async (bookId: string) => {
     try {
+      setReturningBookId(bookId);
       await api.post(`/books/${bookId}/return`);
-      fetchBorrowedBooks();
-      Alert.alert("Success", "Book returned successfully");
+
+      // Optimistically update the UI
+      setBorrowedBooks((prevBooks) =>
+        prevBooks.filter((book) => book._id !== bookId)
+      );
+
+      Toast.show({
+        type: "success",
+        text1: "Success",
+        text2: "Book returned successfully!",
+        position: "bottom",
+      });
     } catch (error) {
       console.error("Error returning book:", error);
-      Alert.alert("Error", "Failed to return book");
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: error.response?.data?.message || "Failed to return book",
+        position: "bottom",
+      });
+      // Refresh to get actual state if optimistic update was wrong
+      fetchBorrowedBooks();
+    } finally {
+      setReturningBookId(null);
     }
   };
 
@@ -94,14 +147,12 @@ const ProfileScreen = () => {
       if (tempImage) {
         const formData = new FormData();
 
-        // Create a file object with proper typing
         const file = {
           uri: tempImage.uri,
           name: tempImage.uri.split("/").pop() || "profile.jpg",
           type: mime.getType(tempImage.uri) || "image/jpeg",
         };
 
-        // @ts-ignore - React Native specific FormData append
         formData.append("image", file);
 
         try {
@@ -117,7 +168,6 @@ const ProfileScreen = () => {
         }
       }
 
-      // Update user info
       const response = await api.put("/auth/me", {
         name: editName,
         email: editEmail,
@@ -126,13 +176,21 @@ const ProfileScreen = () => {
 
       updateUser(response.data);
       setEditing(false);
-      Alert.alert("Success", "Profile updated successfully");
+      setTempImage(null);
+      Toast.show({
+        type: "success",
+        text1: "Success",
+        text2: "Profile updated successfully",
+        position: "bottom",
+      });
     } catch (error) {
       console.error("Error updating profile:", error);
-      Alert.alert(
-        "Error",
-        error.response?.data?.message || "Failed to update profile"
-      );
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: error.response?.data?.message || "Failed to update profile",
+        position: "bottom",
+      });
     } finally {
       setSaving(false);
     }
@@ -141,10 +199,12 @@ const ProfileScreen = () => {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission required",
-        "We need access to your photos to upload a profile picture"
-      );
+      Toast.show({
+        type: "error",
+        text1: "Permission required",
+        text2: "We need access to your photos to upload a profile picture",
+        position: "bottom",
+      });
       return;
     }
 
@@ -246,20 +306,38 @@ const ProfileScreen = () => {
 
       <View className="flex-row mt-4 gap-3">
         <TouchableOpacity
-          className="flex-1 bg-red-100 dark:bg-red-900 py-3 rounded-lg flex-row items-center justify-center space-x-2"
+          className={`flex-1 py-3 rounded-lg flex-row items-center justify-center space-x-2 ${
+            isDarkMode ? "bg-red-900" : "bg-red-100"
+          }`}
           onPress={() => handleReturnBook(item._id)}
+          disabled={returningBookId === item._id}
         >
-          <Ionicons
-            name="return-up-back"
-            size={18}
-            color={isDarkMode ? "#fecaca" : "#dc2626"}
-          />
-          <Text className="text-red-600 dark:text-red-200 font-medium">
-            Return
-          </Text>
+          {returningBookId === item._id ? (
+            <ActivityIndicator
+              size="small"
+              color={isDarkMode ? "#fecaca" : "#dc2626"}
+            />
+          ) : (
+            <>
+              <Ionicons
+                name="return-up-back"
+                size={18}
+                color={isDarkMode ? "#fecaca" : "#dc2626"}
+              />
+              <Text
+                className={`font-medium ${
+                  isDarkMode ? "text-red-200" : "text-red-600"
+                }`}
+              >
+                Return
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
         <TouchableOpacity
-          className="flex-1 bg-blue-100 dark:bg-blue-900 py-3 rounded-lg flex-row items-center justify-center space-x-2"
+          className={`flex-1 py-3 rounded-lg flex-row items-center justify-center space-x-2 ${
+            isDarkMode ? "bg-blue-900" : "bg-blue-100"
+          }`}
           onPress={() => router.push(`/books/detail/${item._id}`)}
         >
           <Ionicons
@@ -267,7 +345,11 @@ const ProfileScreen = () => {
             size={18}
             color={isDarkMode ? "#bfdbfe" : "#2563eb"}
           />
-          <Text className="text-blue-600 dark:text-blue-200 font-medium">
+          <Text
+            className={`font-medium ${
+              isDarkMode ? "text-blue-200" : "text-blue-600"
+            }`}
+          >
             Details
           </Text>
         </TouchableOpacity>
@@ -312,7 +394,7 @@ const ProfileScreen = () => {
         <Text className="text-2xl font-bold text-gray-900 dark:text-white">
           My Profile
         </Text>
-        <TouchableOpacity onPress={handleLogout} className="ml-auto p-2">
+        <TouchableOpacity onPress={confirmLogout} className="ml-auto p-2">
           <Ionicons
             name="log-out-outline"
             size={24}

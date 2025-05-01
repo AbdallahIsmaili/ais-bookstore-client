@@ -27,7 +27,6 @@ const HomeScreen = () => {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
-  // Track if it's the initial load
   const [initialLoad, setInitialLoad] = useState(true);
 
   const loadBooks = async () => {
